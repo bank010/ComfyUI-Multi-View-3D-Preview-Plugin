@@ -112,9 +112,21 @@ class MultiView3DPreview:
         """生成3D预览"""
         images = multi_view_images["images"]
         
-        # 转换图片为base64
-        image_data_list = []
-        for img_tensor in images:
+        # 保存图片到临时目录（避免 base64 数据过大导致 HTTP 错误）
+        import tempfile
+        import uuid
+        from pathlib import Path
+        
+        # 获取 ComfyUI 的临时目录
+        temp_dir = folder_paths.get_temp_directory()
+        session_id = str(uuid.uuid4())[:8]
+        
+        image_files = []
+        subfolder = f"multiview_{session_id}"
+        full_output_folder = os.path.join(temp_dir, subfolder)
+        os.makedirs(full_output_folder, exist_ok=True)
+        
+        for idx, img_tensor in enumerate(images):
             # ComfyUI的图片格式是 [batch, height, width, channels]
             # 取第一个batch
             img_np = img_tensor[0].cpu().numpy()
@@ -125,19 +137,80 @@ class MultiView3DPreview:
             # 转换为PIL Image
             pil_img = Image.fromarray(img_np)
             
-            # 转换为base64
-            buffered = io.BytesIO()
-            pil_img.save(buffered, format="PNG")
-            img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-            image_data_list.append(f"data:image/png;base64,{img_base64}")
+            # 保存到临时文件
+            filename = f"view_{idx:02d}.png"
+            filepath = os.path.join(full_output_folder, filename)
+            pil_img.save(filepath, format="PNG")
+            
+            # 记录文件信息（使用 ComfyUI 的标准格式）
+            image_files.append({
+                "filename": filename,
+                "subfolder": subfolder,
+                "type": "temp"
+            })
         
-        # 返回预览数据（所有值必须是列表格式）
+        # 返回预览数据（使用文件路径而不是 base64）
         return {
             "ui": {
-                "images": image_data_list,
+                "images": image_files,
+                "image_count": [len(images)],
                 "preview_mode": [preview_mode],
                 "rotation_speed": [rotation_speed],
                 "auto_rotate": [auto_rotate],
+            }
+        }
+
+
+class MultiViewImagePreview:
+    """简单的多视角图片预览节点（使用 ComfyUI 标准预览）"""
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "multi_view_images": ("MULTI_VIEW_IMAGES",),
+            }
+        }
+    
+    RETURN_TYPES = ()
+    OUTPUT_NODE = True
+    FUNCTION = "preview_images"
+    CATEGORY = "image/3D"
+    
+    def preview_images(self, multi_view_images):
+        """使用 ComfyUI 标准方式预览图片"""
+        images = multi_view_images["images"]
+        
+        # 保存图片到临时目录
+        import uuid
+        temp_dir = folder_paths.get_temp_directory()
+        session_id = str(uuid.uuid4())[:8]
+        
+        results = []
+        subfolder = f"multiview_preview_{session_id}"
+        full_output_folder = os.path.join(temp_dir, subfolder)
+        os.makedirs(full_output_folder, exist_ok=True)
+        
+        for idx, img_tensor in enumerate(images):
+            # 转换图片
+            img_np = img_tensor[0].cpu().numpy()
+            img_np = (img_np * 255).astype(np.uint8)
+            pil_img = Image.fromarray(img_np)
+            
+            # 保存文件
+            filename = f"view_{idx:02d}.png"
+            filepath = os.path.join(full_output_folder, filename)
+            pil_img.save(filepath, format="PNG", compress_level=4)
+            
+            results.append({
+                "filename": filename,
+                "subfolder": subfolder,
+                "type": "temp"
+            })
+        
+        return {
+            "ui": {
+                "images": results
             }
         }
 
@@ -580,6 +653,7 @@ class SaveMultiView3D:
 NODE_CLASS_MAPPINGS = {
     "MultiViewImageBatch": MultiViewImageBatch,
     "MultiViewImageInput": MultiViewImageInput,
+    "MultiViewImagePreview": MultiViewImagePreview,
     "MultiView3DPreview": MultiView3DPreview,
     "SaveMultiView3D": SaveMultiView3D,
     "TextListMerge": TextListMerge,
@@ -590,6 +664,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MultiViewImageBatch": "多视角图片批量输入 📦",
     "MultiViewImageInput": "多视角图片输入（单个）",
+    "MultiViewImagePreview": "多视角图片预览 🖼️",
     "MultiView3DPreview": "3D预览 🎬",
     "SaveMultiView3D": "保存3D预览HTML 💾",
     "TextListMerge": "文本列表合并 🔗",

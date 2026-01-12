@@ -18,19 +18,55 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
                 
-                // 创建预览容器
-                const previewWidget = this.addCustomWidget(
-                    ComfyWidgets.CANVAS(this, "preview", {})
-                );
+                // 创建容器 div
+                const container = document.createElement("div");
+                container.style.width = "100%";
+                container.style.minHeight = "400px";
+                container.style.backgroundColor = "#1a1a1a";
+                container.style.borderRadius = "8px";
+                container.style.overflow = "hidden";
+                container.style.position = "relative";
                 
-                previewWidget.name = "3d_preview";
-                previewWidget.canvas = document.createElement("canvas");
-                previewWidget.canvas.style.width = "100%";
-                previewWidget.canvas.style.height = "400px";
+                // 创建 canvas
+                const canvas = document.createElement("canvas");
+                canvas.style.width = "100%";
+                canvas.style.height = "400px";
+                canvas.style.display = "block";
+                container.appendChild(canvas);
+                
+                // 创建控制提示
+                const hint = document.createElement("div");
+                hint.innerHTML = "🖱️ 拖拽旋转 | 🔄 自动旋转中...";
+                hint.style.position = "absolute";
+                hint.style.top = "10px";
+                hint.style.left = "10px";
+                hint.style.color = "white";
+                hint.style.backgroundColor = "rgba(0,0,0,0.6)";
+                hint.style.padding = "8px 12px";
+                hint.style.borderRadius = "4px";
+                hint.style.fontSize = "12px";
+                hint.style.fontFamily = "monospace";
+                hint.style.zIndex = "10";
+                container.appendChild(hint);
+                
+                // 添加到节点
+                const widget = this.addDOMWidget("3d_preview", "customtext", container, {
+                    serialize: false,
+                    hideOnZoom: false
+                });
+                
+                widget.computeSize = function(width) {
+                    return [width, 420];
+                };
                 
                 // 存储引用
-                this.previewWidget = previewWidget;
-                this.previewCanvas = previewWidget.canvas;
+                this.previewContainer = container;
+                this.previewCanvas = canvas;
+                this.previewHint = hint;
+                this.previewWidget = widget;
+                
+                // 设置节点大小
+                this.setSize([400, 500]);
                 
                 return result;
             };
@@ -42,22 +78,41 @@ app.registerExtension({
                 onExecuted?.apply(this, arguments);
                 
                 if (message && message.images) {
+                    // 提取参数（从数组中取第一个值）
+                    const previewMode = message.preview_mode ? message.preview_mode[0] : "carousel";
+                    const rotationSpeed = message.rotation_speed ? message.rotation_speed[0] : 1.0;
+                    const autoRotate = message.auto_rotate ? message.auto_rotate[0] : true;
+                    
                     // 渲染3D预览
                     this.render3DPreview(
                         message.images,
-                        message.preview_mode || "carousel",
-                        message.rotation_speed || 1.0,
-                        message.auto_rotate !== false
+                        previewMode,
+                        rotationSpeed,
+                        autoRotate
                     );
                 }
             };
             
             // 3D渲染方法
             nodeType.prototype.render3DPreview = function (images, mode, speed, autoRotate) {
+                // 显示加载提示
+                if (this.previewHint) {
+                    this.previewHint.innerHTML = "⏳ 加载 3D 场景...";
+                }
+                
                 // 如果没有Three.js，动态加载
                 if (typeof THREE === 'undefined') {
+                    if (this.previewHint) {
+                        this.previewHint.innerHTML = "📦 加载 Three.js 库...";
+                    }
                     this.loadThreeJS().then(() => {
                         this.initThreeScene(images, mode, speed, autoRotate);
+                    }).catch((error) => {
+                        console.error("Failed to load Three.js:", error);
+                        if (this.previewHint) {
+                            this.previewHint.innerHTML = "❌ 加载失败";
+                            this.previewHint.style.backgroundColor = "rgba(255,0,0,0.6)";
+                        }
                     });
                 } else {
                     this.initThreeScene(images, mode, speed, autoRotate);
@@ -77,6 +132,7 @@ app.registerExtension({
             
             // 初始化Three.js场景
             nodeType.prototype.initThreeScene = function (images, mode, speed, autoRotate) {
+                const self = this;
                 const canvas = this.previewCanvas;
                 
                 // 清理旧场景
@@ -119,9 +175,42 @@ app.registerExtension({
                 // 加载图片纹理
                 const textureLoader = new THREE.TextureLoader();
                 const imageCount = images.length;
+                let loadedCount = 0;
+                
+                // 转换图片数据为 URL
+                const getImageUrl = (imageData) => {
+                    // 如果是 base64 数据
+                    if (typeof imageData === 'string' && imageData.startsWith('data:')) {
+                        return imageData;
+                    }
+                    // 如果是文件路径对象
+                    if (typeof imageData === 'object' && imageData.filename) {
+                        const params = new URLSearchParams({
+                            filename: imageData.filename,
+                            subfolder: imageData.subfolder || '',
+                            type: imageData.type || 'temp'
+                        });
+                        return `/view?${params.toString()}`;
+                    }
+                    // 否则直接返回
+                    return imageData;
+                };
+                
+                // 更新加载状态
+                const updateLoadingStatus = () => {
+                    if (self.previewHint) {
+                        self.previewHint.innerHTML = `⏳ 加载图片 ${loadedCount}/${imageCount}...`;
+                    }
+                };
+                
+                updateLoadingStatus();
                 
                 images.forEach((imageData, index) => {
-                    textureLoader.load(imageData, (texture) => {
+                    const imageUrl = getImageUrl(imageData);
+                    textureLoader.load(imageUrl, (texture) => {
+                        loadedCount++;
+                        updateLoadingStatus();
+                        
                         const geometry = new THREE.PlaneGeometry(2, 2);
                         const material = new THREE.MeshBasicMaterial({
                             map: texture,
@@ -163,6 +252,23 @@ app.registerExtension({
                         }
                         
                         group.add(plane);
+                        
+                        // 所有图片加载完成后更新提示
+                        if (loadedCount === imageCount) {
+                            const modeText = {
+                                'carousel': '环形',
+                                'sphere': '球形',
+                                'cube': '立方体'
+                            }[mode] || mode;
+                            if (self.previewHint) {
+                                self.previewHint.innerHTML = `✅ ${modeText} | 🖱️ 拖拽旋转 | ${autoRotate ? '🔄 自动旋转 (点击暂停)' : '⏸️ 已暂停 (点击旋转)'}`;
+                                self.previewHint.style.backgroundColor = "rgba(0,128,0,0.7)";
+                            }
+                        }
+                    }, undefined, (error) => {
+                        console.error(`Failed to load image ${index}:`, error);
+                        loadedCount++;
+                        updateLoadingStatus();
                     });
                 });
                 
@@ -197,6 +303,7 @@ app.registerExtension({
                 
                 // 动画循环
                 let isRotating = autoRotate;
+                
                 const animate = () => {
                     requestAnimationFrame(animate);
                     
@@ -208,6 +315,20 @@ app.registerExtension({
                 };
                 
                 animate();
+                
+                // 点击提示切换自动旋转
+                if (self.previewHint) {
+                    self.previewHint.style.cursor = "pointer";
+                    self.previewHint.onclick = () => {
+                        isRotating = !isRotating;
+                        const modeText = {
+                            'carousel': '环形',
+                            'sphere': '球形',
+                            'cube': '立方体'
+                        }[mode] || mode;
+                        self.previewHint.innerHTML = `✅ ${modeText} | 🖱️ 拖拽旋转 | ${isRotating ? '🔄 自动旋转 (点击暂停)' : '⏸️ 已暂停 (点击旋转)'}`;
+                    };
+                }
                 
                 // 保存引用
                 this.threeRenderer = renderer;
