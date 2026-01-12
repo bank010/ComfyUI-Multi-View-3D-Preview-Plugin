@@ -12,8 +12,42 @@ import os
 import folder_paths
 
 
+class MultiViewImageBatch:
+    """多视角图片批量输入节点（接受图片列表）"""
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),  # 接受批量图片
+            }
+        }
+    
+    RETURN_TYPES = ("MULTI_VIEW_IMAGES",)
+    RETURN_NAMES = ("multi_view_images",)
+    FUNCTION = "process_batch"
+    CATEGORY = "image/3D"
+    
+    def process_batch(self, images):
+        """处理批量图片输入"""
+        # images 的形状是 [batch, height, width, channels]
+        batch_size = images.shape[0]
+        
+        if batch_size == 0:
+            raise ValueError("图片列表不能为空")
+        
+        # 将批量图片拆分为单独的图片
+        image_list = []
+        for i in range(batch_size):
+            # 保持维度，每个图片仍然是 [1, height, width, channels]
+            img = images[i:i+1]
+            image_list.append(img)
+        
+        return ({"images": image_list},)
+
+
 class MultiViewImageInput:
-    """多视角图片输入节点"""
+    """多视角图片输入节点（单个图片输入）"""
     
     @classmethod
     def INPUT_TYPES(cls):
@@ -544,6 +578,7 @@ class SaveMultiView3D:
 
 # 注册节点
 NODE_CLASS_MAPPINGS = {
+    "MultiViewImageBatch": MultiViewImageBatch,
     "MultiViewImageInput": MultiViewImageInput,
     "MultiView3DPreview": MultiView3DPreview,
     "SaveMultiView3D": SaveMultiView3D,
@@ -553,10 +588,11 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MultiViewImageInput": "多视角图片输入",
-    "MultiView3DPreview": "3D预览",
-    "SaveMultiView3D": "保存3D预览HTML",
-    "TextListMerge": "文本列表合并",
-    "TextListCreate": "创建文本列表",
-    "TextListDisplay": "显示文本列表",
+    "MultiViewImageBatch": "多视角图片批量输入 📦",
+    "MultiViewImageInput": "多视角图片输入（单个）",
+    "MultiView3DPreview": "3D预览 🎬",
+    "SaveMultiView3D": "保存3D预览HTML 💾",
+    "TextListMerge": "文本列表合并 🔗",
+    "TextListCreate": "创建文本列表 📝",
+    "TextListDisplay": "显示文本列表 👁️",
 }
