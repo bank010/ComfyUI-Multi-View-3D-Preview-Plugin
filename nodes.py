@@ -131,13 +131,13 @@ class MultiView3DPreview:
             img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
             image_data_list.append(f"data:image/png;base64,{img_base64}")
         
-        # 返回预览数据
+        # 返回预览数据（所有值必须是列表格式）
         return {
             "ui": {
                 "images": image_data_list,
-                "preview_mode": preview_mode,
-                "rotation_speed": rotation_speed,
-                "auto_rotate": auto_rotate,
+                "preview_mode": [preview_mode],
+                "rotation_speed": [rotation_speed],
+                "auto_rotate": [auto_rotate],
             }
         }
 
@@ -266,7 +266,7 @@ class TextListDisplay:
         return {
             "ui": {
                 "text": [display_text],
-                "list": text_list,
+                "list": [text_list],
             },
             "result": (text_list,)
         }
