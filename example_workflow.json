@@ -1,0 +1,168 @@
+{
+  "last_node_id": 7,
+  "last_link_id": 12,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadImage",
+      "pos": [100, 100],
+      "size": [315, 314],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [1],
+          "slot_index": 0
+        }
+      ],
+      "title": "加载图片 1"
+    },
+    {
+      "id": 2,
+      "type": "LoadImage",
+      "pos": [100, 450],
+      "size": [315, 314],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [2],
+          "slot_index": 0
+        }
+      ],
+      "title": "加载图片 2"
+    },
+    {
+      "id": 3,
+      "type": "LoadImage",
+      "pos": [100, 800],
+      "size": [315, 314],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [3],
+          "slot_index": 0
+        }
+      ],
+      "title": "加载图片 3"
+    },
+    {
+      "id": 4,
+      "type": "MultiViewImageInput",
+      "pos": [500, 300],
+      "size": [300, 200],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image_1",
+          "type": "IMAGE",
+          "link": 1
+        },
+        {
+          "name": "image_2",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "image_3",
+          "type": "IMAGE",
+          "link": 3
+        },
+        {
+          "name": "image_4",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "image_5",
+          "type": "IMAGE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "multi_view_images",
+          "type": "MULTI_VIEW_IMAGES",
+          "links": [4, 5],
+          "slot_index": 0
+        }
+      ],
+      "title": "多视角图片输入"
+    },
+    {
+      "id": 5,
+      "type": "MultiView3DPreview",
+      "pos": [900, 200],
+      "size": [400, 500],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "multi_view_images",
+          "type": "MULTI_VIEW_IMAGES",
+          "link": 4
+        }
+      ],
+      "properties": {
+        "preview_mode": "carousel",
+        "rotation_speed": 1.0,
+        "auto_rotate": true
+      },
+      "title": "3D预览"
+    },
+    {
+      "id": 6,
+      "type": "SaveMultiView3D",
+      "pos": [900, 750],
+      "size": [400, 200],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "multi_view_images",
+          "type": "MULTI_VIEW_IMAGES",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "file_path",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "preview_mode": "carousel",
+        "rotation_speed": 1.0,
+        "auto_rotate": true,
+        "filename": "my_3d_preview.html"
+      },
+      "title": "保存3D预览HTML"
+    }
+  ],
+  "links": [
+    [1, 1, 0, 4, 0, "IMAGE"],
+    [2, 2, 0, 4, 1, "IMAGE"],
+    [3, 3, 0, 4, 2, "IMAGE"],
+    [4, 4, 0, 5, 0, "MULTI_VIEW_IMAGES"],
+    [5, 4, 0, 6, 0, "MULTI_VIEW_IMAGES"]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {},
+  "version": 0.4
+}
