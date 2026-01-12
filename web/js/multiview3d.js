@@ -4,7 +4,6 @@
  */
 
 import { app } from "../../scripts/app.js";
-import { ComfyWidgets } from "../../scripts/widgets.js";
 
 // 注册扩展
 app.registerExtension({
@@ -12,116 +11,83 @@ app.registerExtension({
     
     async beforeRegisterNodeDef(nodeType, nodeData, app) {
         if (nodeData.name === "MultiView3DPreview") {
-            // 添加3D预览小部件
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             
             nodeType.prototype.onNodeCreated = function () {
                 const result = onNodeCreated?.apply(this, arguments);
                 
-                // 创建容器 div
-                const container = document.createElement("div");
-                container.style.width = "100%";
-                container.style.minHeight = "400px";
-                container.style.backgroundColor = "#1a1a1a";
-                container.style.borderRadius = "8px";
-                container.style.overflow = "hidden";
-                container.style.position = "relative";
-                
-                // 创建 canvas
-                const canvas = document.createElement("canvas");
-                canvas.style.width = "100%";
-                canvas.style.height = "400px";
-                canvas.style.display = "block";
-                container.appendChild(canvas);
-                
-                // 创建控制提示
-                const hint = document.createElement("div");
-                hint.innerHTML = "🖱️ 拖拽旋转 | 🔄 自动旋转中...";
-                hint.style.position = "absolute";
-                hint.style.top = "10px";
-                hint.style.left = "10px";
-                hint.style.color = "white";
-                hint.style.backgroundColor = "rgba(0,0,0,0.6)";
-                hint.style.padding = "8px 12px";
-                hint.style.borderRadius = "4px";
-                hint.style.fontSize = "12px";
-                hint.style.fontFamily = "monospace";
-                hint.style.zIndex = "10";
-                container.appendChild(hint);
-                
-                // 添加到节点
-                const widget = this.addDOMWidget("3d_preview", "customtext", container, {
-                    serialize: false,
-                    hideOnZoom: false
-                });
-                
-                widget.computeSize = function(width) {
-                    return [width, 420];
-                };
+                // 创建一个隐藏的widget来存储数据
+                const widget = this.addWidget("button", "3D_preview_widget", null, () => {});
+                widget.serialize = false;
                 
                 // 存储引用
-                this.previewContainer = container;
-                this.previewCanvas = canvas;
-                this.previewHint = hint;
-                this.previewWidget = widget;
+                this.preview3DWidget = widget;
                 
-                // 设置节点大小
-                this.setSize([400, 500]);
+                // 增加节点高度以容纳3D预览
+                this.setSize([Math.max(400, this.size[0]), this.size[1] + 450]);
                 
                 return result;
             };
             
-            // 处理执行结果
-            const onExecuted = nodeType.prototype.onExecuted;
+            // 自定义绘制
+            const onDrawForeground = nodeType.prototype.onDrawForeground;
+            nodeType.prototype.onDrawForeground = function(ctx) {
+                if (onDrawForeground) {
+                    onDrawForeground.apply(this, arguments);
+                }
+                
+                // 如果有3D容器，确保它在正确位置
+                if (this.preview3DContainer && this.preview3DContainer.parentElement) {
+                    const rect = this.getBounding();
+                    const container = this.preview3DContainer;
+                    
+                    // 更新容器位置
+                    container.style.left = rect[0] + "px";
+                    container.style.top = (rect[1] + 80) + "px";
+                    container.style.width = (rect[2] - 20) + "px";
+                }
+            };
             
+            const onExecuted = nodeType.prototype.onExecuted;
             nodeType.prototype.onExecuted = function (message) {
-                onExecuted?.apply(this, arguments);
+                if (onExecuted) {
+                    onExecuted.apply(this, arguments);
+                }
                 
                 if (message && message.images) {
-                    // 提取参数（从数组中取第一个值）
                     const previewMode = message.preview_mode ? message.preview_mode[0] : "carousel";
                     const rotationSpeed = message.rotation_speed ? message.rotation_speed[0] : 1.0;
                     const autoRotate = message.auto_rotate ? message.auto_rotate[0] : true;
                     
-                    // 渲染3D预览
-                    this.render3DPreview(
-                        message.images,
-                        previewMode,
-                        rotationSpeed,
-                        autoRotate
-                    );
+                    this.render3DPreview(message.images, previewMode, rotationSpeed, autoRotate);
                 }
             };
             
-            // 3D渲染方法
             nodeType.prototype.render3DPreview = function (images, mode, speed, autoRotate) {
-                // 显示加载提示
-                if (this.previewHint) {
-                    this.previewHint.innerHTML = "⏳ 加载 3D 场景...";
-                }
+                console.log("Starting 3D preview with", images.length, "images");
                 
                 // 如果没有Three.js，动态加载
                 if (typeof THREE === 'undefined') {
-                    if (this.previewHint) {
-                        this.previewHint.innerHTML = "📦 加载 Three.js 库...";
-                    }
+                    console.log("Loading Three.js...");
                     this.loadThreeJS().then(() => {
-                        this.initThreeScene(images, mode, speed, autoRotate);
+                        console.log("Three.js loaded successfully");
+                        this.createPreviewContainer(images, mode, speed, autoRotate);
                     }).catch((error) => {
                         console.error("Failed to load Three.js:", error);
-                        if (this.previewHint) {
-                            this.previewHint.innerHTML = "❌ 加载失败";
-                            this.previewHint.style.backgroundColor = "rgba(255,0,0,0.6)";
-                        }
                     });
                 } else {
-                    this.initThreeScene(images, mode, speed, autoRotate);
+                    console.log("Three.js already loaded");
+                    this.createPreviewContainer(images, mode, speed, autoRotate);
                 }
             };
             
-            // 加载Three.js
             nodeType.prototype.loadThreeJS = function () {
                 return new Promise((resolve, reject) => {
+                    if (document.querySelector('script[src*="three.min.js"]')) {
+                        resolve();
+                        return;
+                    }
+                    
                     const script = document.createElement('script');
                     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
                     script.onload = resolve;
@@ -130,35 +96,81 @@ app.registerExtension({
                 });
             };
             
-            // 初始化Three.js场景
-            nodeType.prototype.initThreeScene = function (images, mode, speed, autoRotate) {
+            nodeType.prototype.createPreviewContainer = function(images, mode, speed, autoRotate) {
                 const self = this;
-                const canvas = this.previewCanvas;
                 
-                // 清理旧场景
-                if (this.threeRenderer) {
-                    this.threeRenderer.dispose();
+                // 移除旧容器
+                if (this.preview3DContainer) {
+                    this.preview3DContainer.remove();
                 }
+                
+                // 创建新容器
+                const container = document.createElement("div");
+                container.className = "multiview-3d-container";
+                container.style.position = "fixed";
+                container.style.width = "380px";
+                container.style.height = "400px";
+                container.style.backgroundColor = "#1a1a1a";
+                container.style.borderRadius = "8px";
+                container.style.overflow = "hidden";
+                container.style.zIndex = "100";
+                container.style.boxShadow = "0 4px 12px rgba(0,0,0,0.5)";
+                
+                // 创建 canvas
+                const canvas = document.createElement("canvas");
+                canvas.width = 380;
+                canvas.height = 400;
+                canvas.style.display = "block";
+                container.appendChild(canvas);
+                
+                // 创建状态提示
+                const hint = document.createElement("div");
+                hint.innerHTML = "⏳ 初始化3D场景...";
+                hint.style.position = "absolute";
+                hint.style.top = "10px";
+                hint.style.left = "10px";
+                hint.style.color = "white";
+                hint.style.backgroundColor = "rgba(0,0,0,0.7)";
+                hint.style.padding = "8px 12px";
+                hint.style.borderRadius = "4px";
+                hint.style.fontSize = "12px";
+                hint.style.zIndex = "10";
+                hint.style.cursor = "pointer";
+                container.appendChild(hint);
+                
+                // 添加到body
+                document.body.appendChild(container);
+                
+                // 保存引用
+                this.preview3DContainer = container;
+                this.preview3DCanvas = canvas;
+                this.preview3DHint = hint;
+                
+                // 初始化3D场景
+                this.initThreeScene(canvas, hint, images, mode, speed, autoRotate);
+                
+                // 更新位置
+                const rect = this.getBounding();
+                container.style.left = rect[0] + "px";
+                container.style.top = (rect[1] + 80) + "px";
+            };
+            
+            nodeType.prototype.initThreeScene = function (canvas, hint, images, mode, speed, autoRotate) {
+                const self = this;
+                
+                console.log("Initializing Three.js scene...");
                 
                 // 创建场景
                 const scene = new THREE.Scene();
                 scene.background = new THREE.Color(0x1a1a1a);
                 
                 // 创建相机
-                const camera = new THREE.PerspectiveCamera(
-                    75,
-                    canvas.clientWidth / canvas.clientHeight,
-                    0.1,
-                    1000
-                );
+                const camera = new THREE.PerspectiveCamera(75, canvas.width / canvas.height, 0.1, 1000);
                 camera.position.z = 5;
                 
                 // 创建渲染器
-                const renderer = new THREE.WebGLRenderer({ 
-                    canvas: canvas,
-                    antialias: true 
-                });
-                renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+                const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+                renderer.setSize(canvas.width, canvas.height);
                 
                 // 创建组
                 const group = new THREE.Group();
@@ -167,23 +179,13 @@ app.registerExtension({
                 // 添加光源
                 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
                 scene.add(ambientLight);
-                
                 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
                 directionalLight.position.set(10, 10, 10);
                 scene.add(directionalLight);
                 
-                // 加载图片纹理
-                const textureLoader = new THREE.TextureLoader();
-                const imageCount = images.length;
-                let loadedCount = 0;
-                
-                // 转换图片数据为 URL
+                // 转换图片URL
                 const getImageUrl = (imageData) => {
-                    // 如果是 base64 数据
-                    if (typeof imageData === 'string' && imageData.startsWith('data:')) {
-                        return imageData;
-                    }
-                    // 如果是文件路径对象
+                    if (typeof imageData === 'string') return imageData;
                     if (typeof imageData === 'object' && imageData.filename) {
                         const params = new URLSearchParams({
                             filename: imageData.filename,
@@ -192,24 +194,23 @@ app.registerExtension({
                         });
                         return `/view?${params.toString()}`;
                     }
-                    // 否则直接返回
                     return imageData;
                 };
                 
-                // 更新加载状态
-                const updateLoadingStatus = () => {
-                    if (self.previewHint) {
-                        self.previewHint.innerHTML = `⏳ 加载图片 ${loadedCount}/${imageCount}...`;
-                    }
-                };
+                // 加载图片
+                const textureLoader = new THREE.TextureLoader();
+                const imageCount = images.length;
+                let loadedCount = 0;
                 
-                updateLoadingStatus();
+                hint.innerHTML = `⏳ 加载图片 0/${imageCount}...`;
                 
                 images.forEach((imageData, index) => {
                     const imageUrl = getImageUrl(imageData);
+                    console.log(`Loading image ${index}:`, imageUrl);
+                    
                     textureLoader.load(imageUrl, (texture) => {
                         loadedCount++;
-                        updateLoadingStatus();
+                        hint.innerHTML = `⏳ 加载图片 ${loadedCount}/${imageCount}...`;
                         
                         const geometry = new THREE.PlaneGeometry(2, 2);
                         const material = new THREE.MeshBasicMaterial({
@@ -218,7 +219,7 @@ app.registerExtension({
                         });
                         const plane = new THREE.Mesh(geometry, material);
                         
-                        // 根据模式设置位置
+                        // 设置位置
                         if (mode === 'carousel') {
                             const radius = 3;
                             const angle = (index / imageCount) * Math.PI * 2;
@@ -229,7 +230,6 @@ app.registerExtension({
                             const radius = 3;
                             const phi = Math.acos(-1 + (2 * index) / imageCount);
                             const theta = Math.sqrt(imageCount * Math.PI) * phi;
-                            
                             plane.position.x = radius * Math.cos(theta) * Math.sin(phi);
                             plane.position.y = radius * Math.sin(theta) * Math.sin(phi);
                             plane.position.z = radius * Math.cos(phi);
@@ -243,7 +243,6 @@ app.registerExtension({
                                 { x: 0, y: 2, z: 0, rx: -Math.PI/2, ry: 0 },
                                 { x: 0, y: -2, z: 0, rx: Math.PI/2, ry: 0 }
                             ];
-                            
                             if (index < positions.length) {
                                 const pos = positions[index];
                                 plane.position.set(pos.x, pos.y, pos.z);
@@ -253,22 +252,17 @@ app.registerExtension({
                         
                         group.add(plane);
                         
-                        // 所有图片加载完成后更新提示
+                        // 所有图片加载完成
                         if (loadedCount === imageCount) {
-                            const modeText = {
-                                'carousel': '环形',
-                                'sphere': '球形',
-                                'cube': '立方体'
-                            }[mode] || mode;
-                            if (self.previewHint) {
-                                self.previewHint.innerHTML = `✅ ${modeText} | 🖱️ 拖拽旋转 | ${autoRotate ? '🔄 自动旋转 (点击暂停)' : '⏸️ 已暂停 (点击旋转)'}`;
-                                self.previewHint.style.backgroundColor = "rgba(0,128,0,0.7)";
-                            }
+                            const modeText = {'carousel': '环形', 'sphere': '球形', 'cube': '立方体'}[mode] || mode;
+                            hint.innerHTML = `✅ ${modeText} | 🖱️ 拖拽 | ${autoRotate ? '🔄 旋转中' : '⏸️ 暂停'}`;
+                            hint.style.backgroundColor = "rgba(0,128,0,0.7)";
+                            console.log("All images loaded successfully");
                         }
                     }, undefined, (error) => {
                         console.error(`Failed to load image ${index}:`, error);
                         loadedCount++;
-                        updateLoadingStatus();
+                        hint.innerHTML = `⚠️ 加载图片 ${loadedCount}/${imageCount} (有错误)`;
                     });
                 });
                 
@@ -278,6 +272,7 @@ app.registerExtension({
                 
                 canvas.addEventListener('mousedown', (e) => {
                     isDragging = true;
+                    e.preventDefault();
                 });
                 
                 canvas.addEventListener('mousemove', (e) => {
@@ -286,55 +281,50 @@ app.registerExtension({
                             x: e.offsetX - previousMousePosition.x,
                             y: e.offsetY - previousMousePosition.y
                         };
-                        
                         group.rotation.y += deltaMove.x * 0.01;
                         group.rotation.x += deltaMove.y * 0.01;
                     }
-                    
-                    previousMousePosition = {
-                        x: e.offsetX,
-                        y: e.offsetY
-                    };
+                    previousMousePosition = { x: e.offsetX, y: e.offsetY };
                 });
                 
                 canvas.addEventListener('mouseup', () => {
                     isDragging = false;
                 });
                 
-                // 动画循环
-                let isRotating = autoRotate;
+                canvas.addEventListener('mouseleave', () => {
+                    isDragging = false;
+                });
                 
+                // 点击切换旋转
+                let isRotating = autoRotate;
+                hint.onclick = () => {
+                    isRotating = !isRotating;
+                    const modeText = {'carousel': '环形', 'sphere': '球形', 'cube': '立方体'}[mode] || mode;
+                    hint.innerHTML = `✅ ${modeText} | 🖱️ 拖拽 | ${isRotating ? '🔄 旋转中' : '⏸️ 暂停'}`;
+                };
+                
+                // 动画循环
                 const animate = () => {
                     requestAnimationFrame(animate);
-                    
                     if (isRotating) {
                         group.rotation.y += 0.005 * speed;
                     }
-                    
                     renderer.render(scene, camera);
                 };
                 
                 animate();
-                
-                // 点击提示切换自动旋转
-                if (self.previewHint) {
-                    self.previewHint.style.cursor = "pointer";
-                    self.previewHint.onclick = () => {
-                        isRotating = !isRotating;
-                        const modeText = {
-                            'carousel': '环形',
-                            'sphere': '球形',
-                            'cube': '立方体'
-                        }[mode] || mode;
-                        self.previewHint.innerHTML = `✅ ${modeText} | 🖱️ 拖拽旋转 | ${isRotating ? '🔄 自动旋转 (点击暂停)' : '⏸️ 已暂停 (点击旋转)'}`;
-                    };
+                console.log("Animation started");
+            };
+            
+            // 清理
+            const onRemoved = nodeType.prototype.onRemoved;
+            nodeType.prototype.onRemoved = function() {
+                if (this.preview3DContainer) {
+                    this.preview3DContainer.remove();
                 }
-                
-                // 保存引用
-                this.threeRenderer = renderer;
-                this.threeScene = scene;
-                this.threeCamera = camera;
-                this.threeGroup = group;
+                if (onRemoved) {
+                    onRemoved.apply(this, arguments);
+                }
             };
         }
     }
